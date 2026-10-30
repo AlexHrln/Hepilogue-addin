@@ -1,0 +1,67 @@
+<!doctype html>
+<html lang="fr">
+<head>
+  <meta charset="utf-8">
+  <meta http-equiv="X-UA-Compatible" content="IE=Edge">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Hépilogue – Saisie</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+Condensed:wght@400;500;600&family=IBM+Plex+Sans:ital,wght@0,400;0,500;0,600;1,400&display=swap">
+  <link rel="stylesheet" href="css/taskpane.css?v=1.0.0">
+  <script src="https://appsforoffice.microsoft.com/lib/1/hosted/office.js"></script>
+</head>
+<body>
+  <div id="app">
+    <header class="top">
+      <div class="top-line">
+        <span class="brand">Hépilogue</span>
+        <span class="brand-sub">saisie &amp; contrôle</span>
+        <span class="top-actions">
+          <button id="btn-refresh" class="icon-btn" type="button" title="Relire le classeur" aria-label="Relire le classeur">
+            <svg viewBox="0 0 16 16" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M13 3v3.5H9.5"/><path d="M12.6 6.4A5 5 0 1 0 13 9"/></svg>
+          </button>
+          <button id="btn-menu" class="icon-btn" type="button" title="Réglages" aria-label="Réglages">
+            <svg viewBox="0 0 16 16" width="16" height="16" fill="currentColor" aria-hidden="true"><circle cx="3.5" cy="8" r="1.2"/><circle cx="8" cy="8" r="1.2"/><circle cx="12.5" cy="8" r="1.2"/></svg>
+          </button>
+        </span>
+      </div>
+      <div class="ctx">
+        <select id="ctx-op" class="ctx-sel" aria-label="Opération"></select>
+        <select id="ctx-mois" class="ctx-sel ctx-mois" aria-label="Mois"></select>
+        <button id="ctx-follow" class="icon-btn follow" type="button" aria-label="Lien avec le tableau de bord"></button>
+      </div>
+      <div id="busy" class="busy" hidden><span>Lecture du classeur…</span></div>
+    </header>
+    <div id="banner" class="banner" hidden></div>
+    <div id="stale" class="stale" hidden>
+      <span>Le classeur a été modifié par ailleurs.</span>
+      <button id="stale-reload" type="button" class="linkish">Actualiser</button>
+    </div>
+    <nav id="tabs" class="tabs" role="tablist" aria-label="Sections"></nav>
+    <main id="view" class="view" tabindex="-1"></main>
+    <div id="toast-root" class="toast-root"></div>
+    <div id="modal-root"></div>
+  </div>
+
+  <script src="js/00-config.js?v=1.0.0"></script>
+  <script src="js/01-util.js?v=1.0.0"></script>
+  <script src="js/02-excel.js?v=1.0.0"></script>
+  <script src="js/03-store.js?v=1.0.0"></script>
+  <script src="js/04-ui.js?v=1.0.0"></script>
+  <script src="js/05-checks.js?v=1.0.0"></script>
+  <script src="js/10-saisie.js?v=1.0.0"></script>
+  <script src="js/12-referentiel.js?v=1.0.0"></script>
+  <script src="js/13-controles.js?v=1.0.0"></script>
+  <script src="js/14-journal.js?v=1.0.0"></script>
+  <script src="js/20-app.js?v=1.0.0"></script>
+  <script>
+    Office.onReady(function (info) {
+      if (info.host === Office.HostType.Excel) { Hepi.A.start(); }
+      else {
+        document.getElementById('view').innerHTML = '<div class="empty"><p class="empty-title">Ce complément fonctionne dans Excel.</p></div>';
+      }
+    });
+  </script>
+</body>
+</html>
