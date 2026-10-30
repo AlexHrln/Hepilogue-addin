@@ -3,7 +3,7 @@
  * il suffit de modifier les listes ci-dessous. */
 window.Hepi = window.Hepi || {};
 
-Hepi.VERSION = '2.0.0';
+Hepi.VERSION = '2.1.0';
 
 Hepi.TVA = ['5,5 %', '10 %', '20 %'];
 

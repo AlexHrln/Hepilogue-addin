@@ -61,12 +61,13 @@
     });
   };
 
-  function locate(values, idx, base, hint) {
+  function locate(values, idx, base, hint, used) {
     const fields = Object.keys(base).filter(h => idx[h] !== undefined);
     const same = r => fields.every(h => U.same(r[idx[h]], base[h]));
-    if (hint !== undefined && hint < values.length && same(values[hint])) return hint;
+    const free = i => !used || !used.has(i);
+    if (hint !== undefined && hint < values.length && free(hint) && same(values[hint])) return hint;
     const found = [];
-    values.forEach((r, i) => { if (same(r)) found.push(i); });
+    values.forEach((r, i) => { if (free(i) && same(r)) found.push(i); });
     if (!found.length) return -1;
     return found.reduce((a, b) => Math.abs(b - hint) < Math.abs(a - hint) ? b : a);
   }
@@ -78,9 +79,10 @@
     cell.values = [[v]];
   }
 
-  /* Modifie une ligne. base = valeurs de la ligne à l'ouverture de la fiche (pour la retrouver).
-   * Si la ligne a changé entre-temps, on la retrouve par ses champs clés et on signale les conflits. */
-  X.updateRow = function (table, req) {
+  /* Modifie une ou plusieurs lignes d'une table, en une seule fois.
+   * reqs = [{ base, hint, changes }] : base = valeurs de la ligne à l'ouverture de la fiche.
+   * Si l'une des lignes a été modifiée entre-temps par quelqu'un d'autre, rien n'est écrit. */
+  X.updateRows = function (table, reqs, textCols) {
     return Excel.run(async ctx => {
       const t = ctx.workbook.tables.getItem(table);
       const hdr = t.getHeaderRowRange().load('values');
@@ -89,27 +91,23 @@
       const headers = hdr.values[0].map(h => String(h).trim());
       const idx = indexOf(headers);
       const calc = detectCalc(body.formulasR1C1, body.values);
-      let i = locate(body.values, idx, req.base, req.hint);
-      let conflicts = [];
-      if (i < 0) {
-        const keyBase = {};
-        req.keys.forEach(k => { keyBase[k] = req.base[k]; });
-        i = locate(body.values, idx, keyBase, req.hint);
-        if (i < 0) return { status: 'notfound' };
-        const row = body.values[i];
-        conflicts = Object.keys(req.changes).filter(h => idx[h] !== undefined
-          && !U.same(row[idx[h]], req.base[h]) && !U.same(row[idx[h]], req.changes[h]))
-          .map(h => ({ col: h, theirs: row[idx[h]], mine: req.changes[h] }));
-        if (conflicts.length && !req.force) return { status: 'conflict', conflicts };
+      const used = new Set();
+      const rows = [];
+      for (const req of reqs) {
+        const i = locate(body.values, idx, req.base, req.hint, used);
+        if (i < 0) return { status: 'changed' };
+        used.add(i); rows.push(i);
       }
-      for (const h in req.changes) {
-        const j = idx[h];
-        if (j === undefined) throw new Error(`Colonne « ${h} » introuvable dans ${table}.`);
-        if (calc[j] !== undefined) throw new Error(`La colonne « ${h} » est calculée : elle n’est pas modifiable.`);
-        writeCell(body.getCell(i, j), req.changes[h], (req.textCols || []).includes(h));
-      }
+      reqs.forEach((req, k) => {
+        for (const h in req.changes) {
+          const j = idx[h];
+          if (j === undefined) throw new Error(`Colonne « ${h} » introuvable dans ${table}.`);
+          if (calc[j] !== undefined) throw new Error(`La colonne « ${h} » est calculée : elle n’est pas modifiable.`);
+          writeCell(body.getCell(rows[k], j), req.changes[h], (textCols || []).includes(h));
+        }
+      });
       await ctx.sync();
-      return { status: 'ok', rowIndex: i };
+      return { status: 'ok', rows };
     });
   };
 

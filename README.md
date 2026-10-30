@@ -7,13 +7,15 @@ Il fonctionne dans Excel pour Microsoft 365 (Mac, Windows, web) sur le classeur 
 
 **Paiements du mois**
 - Le panneau suit l'opération et le mois choisis dans le tableau de bord (cellules nommées `Nom_operation` et `Mois_en_cours`). Si vous les changez, il se met à jour.
-- Il liste les lignes de BDD_Paiements de ce mois, mandataire puis sous-traitants, lot par lot.
-- Une ligne s'ouvre en fiche avec les champs corrigés :
+- Il liste les entreprises payées ce mois-ci, mandataire puis sous-traitants, lot par lot. Quand une entreprise a plusieurs lignes dans BDD_Paiements pour le même mois et le même lot, elles sont cumulées en une seule, comme dans le tableau de bord.
+- Une entreprise s'ouvre en fiche avec les montants cumulés du mois et les champs corrigés :
   - avancement total, part propre, révision et avance HT, par taux de TVA ;
   - coefficient de révision, TVA autoliquidée ;
   - retenue de garantie, pénalités, autres retenues, remboursement d'avance ;
   - montant payé TTC.
 - « Ajouter une ligne » crée un paiement pour l'opération affichée. Choisir une entreprise connue remplit son rôle, son mandataire, son lot et l'autoliquidation. La date de réception est proposée dans le mois affiché, puisque c'est elle qui rattache la ligne au mois.
+
+Quand plusieurs lignes sont cumulées, une correction est reportée sur la dernière ligne extraite (l'écart entre l'ancien et le nouveau cumul) ; les autres lignes ne changent pas et le total reste juste. Un nouveau coefficient de révision s'applique à toutes les lignes du mois.
 
 Les montants se saisissent à la française (`12 345,67`) ou par calcul (`=1000*1,2`).
 
@@ -82,5 +84,5 @@ Tout est dans `src/js/00-config.js` :
 - `lot` et `entreprise` : les formulaires d'ajout au référentiel ;
 - `tables` et `dashboard` : les noms des tables et des cellules nommées.
 
-Après une modification, remplacez les fichiers hébergés et augmentez le numéro `?v=2.0.0` dans `src/taskpane.html` pour que les postes rechargent la nouvelle version.
+Après une modification, remplacez les fichiers hébergés et augmentez le numéro `?v=2.1.0` dans `src/taskpane.html` pour que les postes rechargent la nouvelle version.
 Si une ancienne version reste affichée sur Mac, quittez Excel et videz le dossier `~/Library/Containers/com.microsoft.Excel/Data/Library/Application Support/Microsoft/Office/16.0/Wef/`.

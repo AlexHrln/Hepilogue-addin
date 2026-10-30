@@ -227,47 +227,83 @@
     return true;
   }
 
-  /* Liste des paiements du mois */
-  function viewPaiements(v) {
-    if (!S.t[T.paiements]) { v.appendChild(h('p', { class: 'empty', text: `Table ${T.paiements} introuvable dans ce classeur.` })); return; }
-    const rows = records(T.paiements).filter(r => U.same(r['Opération'], S.op) && U.same(r.Mois, S.mois));
-    const total = rows.reduce((a, r) => a + U.num(r.montant_ttc_declare), 0);
-    v.appendChild(h('div', { class: 'bar' },
-      h('span', { class: 'bar-text', text: rows.length ? `${rows.length} ligne${rows.length > 1 ? 's' : ''} — ${U.fmtMoney(U.round2(total))} € TTC` : '' }),
-      btn('Ajouter une ligne', () => openPaiement(null), 'primary small')));
-    if (!rows.length) {
-      v.appendChild(h('p', { class: 'empty', text: 'Aucun paiement pour ce mois. Changez de mois dans le tableau de bord ou ajoutez une ligne.' }));
-      return;
-    }
-    // Mandataire puis ses sous-traitants, lot par lot
-    const groups = {};
-    rows.forEach(r => {
-      const mand = r.type_entreprise === 'Sous-traitant' ? r.mandataire : r.entreprise;
-      const k = r.lot + '§' + mand;
-      (groups[k] = groups[k] || { lot: r.lot, items: [] }).items.push(r);
+  /* Champs modifiables de la fiche (matrice + champs simples) */
+  function editDefs() {
+    const P = C.paiement;
+    return P.matrix.flatMap(r => r.cols.map(col => ({ col, type: 'money' }))).concat(P.fields)
+      .filter(d => has(T.paiements, d.col));
+  }
+
+  /* Lignes du mois regroupées par entreprise (et par lot, comme le tableau de bord) */
+  function groupsOfMonth() {
+    const map = {};
+    records(T.paiements).filter(r => U.same(r['Opération'], S.op) && U.same(r.Mois, S.mois)).forEach(r => {
+      const k = [r.entreprise, r.lot, r.type_entreprise].map(U.norm).join('|');
+      (map[k] = map[k] || { rows: [] }).rows.push(r);
     });
-    Object.keys(groups).sort((a, b) => a.localeCompare(b, 'fr', { numeric: true })).forEach(k => {
-      const g = groups[k];
-      g.items.sort((a, b) => (a.type_entreprise === 'Sous-traitant') - (b.type_entreprise === 'Sous-traitant') || String(a.entreprise).localeCompare(String(b.entreprise), 'fr'));
-      v.appendChild(h('div', { class: 'grp', text: g.lot || 'Lot non renseigné' }));
-      g.items.forEach(r => v.appendChild(h('button', {
-        type: 'button', class: 'item' + (r.type_entreprise === 'Sous-traitant' ? ' st' : ''), on: { click: () => openPaiement(r) }
-      },
-      h('span', { class: 'item-main' }, h('span', { class: 'item-name', text: r.entreprise || '?' }),
-        h('span', { class: 'item-meta', text: `${r.type_entreprise || ''} — situation ${U.display(r['N°_Situation'], 'int')}` })),
-      h('span', { class: 'item-amount num', text: U.fmtMoney(r.montant_ttc_declare) }))));
+    return Object.values(map).map(g => {
+      const r0 = g.rows[0];
+      g.entreprise = r0.entreprise; g.lot = r0.lot; g.type = r0.type_entreprise; g.mandataire = r0.mandataire;
+      g.situations = U.uniq(g.rows.map(r => U.display(r['N°_Situation'], 'int')));
+      g.target = g.rows.reduce((a, b) => (b._i > a._i ? b : a));   // dernière ligne extraite
+      g.agg = {}; g.coefs = [];
+      editDefs().forEach(d => {
+        const vals = g.rows.map(r => r[d.col]);
+        if (d.type === 'coef') {
+          g.coefs = U.uniq(vals.filter(v => typeof v === 'number' && v !== 0));
+          g.agg[d.col] = g.coefs.length ? g.coefs[0] : (vals.some(v => typeof v === 'number') ? 0 : '');
+        } else {
+          g.agg[d.col] = vals.every(U.isBlank) ? '' : U.round2(vals.reduce((a, v) => a + U.num(v), 0));
+        }
+      });
+      return g;
     });
   }
 
-  /* Fiche d'un paiement (existant ou nouveau) */
-  function openPaiement(rec) {
-    const isNew = !rec;
+  /* Liste des paiements du mois */
+  function viewPaiements(v) {
+    if (!S.t[T.paiements]) { v.appendChild(h('p', { class: 'empty', text: `Table ${T.paiements} introuvable dans ce classeur.` })); return; }
+    const groups = groupsOfMonth();
+    const total = groups.reduce((a, g) => a + U.num(g.agg.montant_ttc_declare), 0);
+    v.appendChild(h('div', { class: 'bar' },
+      h('span', { class: 'bar-text', text: groups.length ? `${groups.length} entreprise${groups.length > 1 ? 's' : ''} — ${U.fmtMoney(U.round2(total))} € TTC` : '' }),
+      btn('Ajouter une ligne', () => openPaiement(null), 'primary small')));
+    if (!groups.length) {
+      v.appendChild(h('p', { class: 'empty', text: 'Aucun paiement pour ce mois. Changez de mois dans le tableau de bord ou ajoutez une ligne.' }));
+      return;
+    }
+    // Lot par lot : le mandataire puis ses sous-traitants
+    const byLot = {};
+    groups.forEach(g => {
+      const mand = g.type === 'Sous-traitant' ? g.mandataire : g.entreprise;
+      const k = g.lot + '§' + mand;
+      (byLot[k] = byLot[k] || { lot: g.lot, items: [] }).items.push(g);
+    });
+    Object.keys(byLot).sort((a, b) => a.localeCompare(b, 'fr', { numeric: true })).forEach(k => {
+      const b = byLot[k];
+      b.items.sort((x, y) => (x.type === 'Sous-traitant') - (y.type === 'Sous-traitant') || String(x.entreprise).localeCompare(String(y.entreprise), 'fr'));
+      v.appendChild(h('div', { class: 'grp', text: b.lot || 'Lot non renseigné' }));
+      b.items.forEach(g => v.appendChild(h('button', {
+        type: 'button', class: 'item' + (g.type === 'Sous-traitant' ? ' st' : ''), on: { click: () => openPaiement(g) }
+      },
+      h('span', { class: 'item-main' }, h('span', { class: 'item-name', text: g.entreprise || '?' }),
+        h('span', { class: 'item-meta', text: meta(g) })),
+      h('span', { class: 'item-amount num', text: U.fmtMoney(g.agg.montant_ttc_declare) }))));
+    });
+  }
+  function meta(g) {
+    const sit = g.situations.length > 1 ? `situations ${g.situations.join(', ')}` : `situation ${g.situations[0] || '?'}`;
+    return `${g.type || ''} — ${sit}` + (g.rows.length > 1 ? ` — ${g.rows.length} lignes cumulées` : '');
+  }
+
+  /* Fiche d'une entreprise pour le mois (montants cumulés), ou nouvelle ligne */
+  function openPaiement(g) {
+    const isNew = !g;
     const P = C.paiement;
     S.view = 'form';
     S.viewFn = function (v) {
-      const values = isNew ? newPaiementDefaults() : Object.assign({}, rec);
-      let foot;
-      const F = makeForm(values, isNew ? null : rec._base, (col, final) => {
+      const values = isNew ? newPaiementDefaults() : Object.assign({}, g.agg);
+      const F = makeForm(values, isNew ? null : g.agg, (col, final) => {
         if (isNew && col === 'entreprise' && final) prefill(F);
         if (isNew && col === 'Date_Réception') dateHint();
         if (final) F.refresh();
@@ -276,8 +312,8 @@
       S.form = F;
       v.appendChild(h('div', { class: 'head' },
         h('button', { type: 'button', class: 'back', 'aria-label': 'Retour', on: { click: async () => { if (await leave()) render(); } } }, '‹'),
-        h('div', {}, h('div', { class: 'head-title', text: isNew ? 'Nouvelle ligne de paiement' : (rec.entreprise || 'Paiement') }),
-          h('div', { class: 'head-sub', text: isNew ? `${S.op} — ${U.monthShort(S.mois)}` : `${rec.type_entreprise || ''}, ${rec.lot || ''} — situation ${U.display(rec['N°_Situation'], 'int')}` }))));
+        h('div', {}, h('div', { class: 'head-title', text: isNew ? 'Nouvelle ligne de paiement' : (g.entreprise || 'Paiement') }),
+          h('div', { class: 'head-sub', text: isNew ? `${S.op} — ${U.monthShort(S.mois)}` : `${g.lot || ''} — ${meta(g)}` }))));
       const hint = h('div', { class: 'hint' });
       function dateHint() {
         const m = U.monthFromSerial(F.values['Date_Réception']);
@@ -289,12 +325,15 @@
         sec.appendChild(hint);
         v.appendChild(sec);
       }
-      v.appendChild(h('div', { class: 'sec' }, h('h3', { text: 'Montants HT du mois' }), matrix(F, P.matrix)));
+      const notes = [];
+      if (!isNew && g.rows.length > 1) notes.push(`Montants cumulés de ${g.rows.length} lignes du mois. Une correction est reportée sur la dernière ligne extraite, les autres restent inchangées.`);
+      if (!isNew && g.coefs.length > 1) notes.push(`Coefficients différents selon les lignes (${g.coefs.map(U.fmtCoef).join(' ; ')}) : une nouvelle valeur s’appliquera à toutes.`);
+      v.appendChild(h('div', { class: 'sec' }, h('h3', { text: 'Montants HT du mois' }),
+        notes.map(n => h('p', { class: 'hint', text: n })), matrix(F, P.matrix)));
       v.appendChild(h('div', { class: 'sec grid2' }, P.fields.filter(d => has(T.paiements, d.col)).map(d => F.field(d))));
       const status = h('span', { class: 'foot-text' });
-      const saveBtn = btn(isNew ? 'Ajouter la ligne' : 'Enregistrer', () => (isNew ? createPaiement(F) : savePaiement(rec, F)), 'primary');
-      foot = h('div', { class: 'foot' }, status, saveBtn);
-      v.appendChild(foot);
+      const saveBtn = btn(isNew ? 'Ajouter la ligne' : 'Enregistrer', () => (isNew ? createPaiement(F) : savePaiement(g, F)), 'primary');
+      v.appendChild(h('div', { class: 'foot' }, status, saveBtn));
       function updateFoot() {
         if (isNew) return;
         const n = Object.keys(F.changes()).length;
@@ -334,30 +373,36 @@
     set('autoliquidation', String(ref['Autoliquidation (OUI/NON)']).toUpperCase() === 'OUI');
   }
 
-  const PAI_KEYS = ['Opération', 'N°_Situation', 'entreprise', 'lot', 'Source_PDF'];
-
-  async function savePaiement(rec, F, force) {
+  /* Reporte les corrections du cumul sur les lignes de la table :
+   * montant : l'écart (nouveau cumul − ancien cumul) va sur la dernière ligne extraite ;
+   * coefficient : la valeur est écrite sur toutes les lignes du mois. */
+  async function savePaiement(g, F) {
     const pb = F.problems();
     if (pb.length) { toast(pb[0], 'err'); return; }
     const changes = F.changes();
     if (!Object.keys(changes).length) return;
+    const types = {};
+    editDefs().forEach(d => { types[d.col] = d.type; });
+    const writes = new Map();
+    const put = (rec, col, val) => {
+      if (!writes.has(rec)) writes.set(rec, {});
+      writes.get(rec)[col] = val;
+    };
+    for (const col in changes) {
+      const nv = changes[col];
+      if (types[col] === 'coef') { g.rows.forEach(r => put(r, col, nv)); continue; }
+      if (g.rows.length === 1) { put(g.target, col, nv); continue; }
+      const delta = U.num(nv) - U.num(g.agg[col]);
+      put(g.target, col, U.round2(U.num(g.target[col]) + delta));
+    }
+    const reqs = Array.from(writes.entries()).map(([rec, ch]) => ({ base: rec._base, hint: rec._i, changes: ch }));
     S.lastWrite = Date.now();
-    const res = await busy(() => X.updateRow(T.paiements, { base: rec._base, hint: rec._i, keys: PAI_KEYS, changes, force }), 'Enregistrement');
+    const res = await busy(() => X.updateRows(T.paiements, reqs), 'Enregistrement');
     if (!res) return;
-    if (res.status === 'conflict') {
-      const body = h('div', {}, h('p', { text: 'Quelqu’un a modifié cette ligne pendant votre saisie :' }),
-        h('ul', {}, res.conflicts.map(c => h('li', { text: `${c.col} : ${U.display(c.theirs, 'money') || '(vide)'} chez l’autre utilisateur, ${U.display(c.mine, 'money') || '(vide)'} chez vous` }))));
-      const keep = await ask('Modification simultanée', body, [{ label: 'Garder sa version', value: false, cls: 'ghost' }, { label: 'Garder ma saisie', value: true, cls: 'primary' }]);
-      if (keep) return savePaiement(rec, F, true);
-      await busy(load); S.form = null; S.view = 'list'; render(); return;
-    }
-    if (res.status === 'notfound') {
-      toast('Ligne introuvable : elle a été supprimée ou modifiée entre-temps. La liste est rechargée.', 'err');
-      await busy(load); S.form = null; S.view = 'list'; render(); return;
-    }
     await busy(load);
     S.form = null; S.view = 'list'; render();
-    toast('Modifications enregistrées.');
+    if (res.status === 'changed') toast('Ces lignes ont été modifiées entre-temps par quelqu’un d’autre : rien n’a été enregistré. Vérifiez puis recommencez.', 'err');
+    else toast('Modifications enregistrées.');
   }
 
   async function createPaiement(F) {
